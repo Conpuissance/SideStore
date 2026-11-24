@@ -1,0 +1,47 @@
+diff --git a/Sources/AnisetteClient.swift b/Sources/AnisetteClient.swift
+index 900cc1b..2a0c222 100644
+--- a/Sources/AnisetteClient.swift
++++ b/Sources/AnisetteClient.swift
+@@ -10,6 +10,7 @@ import Foundation
+ #if canImport(FoundationNetworking)
+ import FoundationNetworking
+ #endif
++import CryptoKit
+ import anisette_core
+ 
+ public enum ProvisioningStorage: Equatable, Sendable {
+@@ -131,6 +132,18 @@ extension AnisetteClient {
+         }
+     }
+ 
++    /// X-Apple-I-MD-LU, derived exactly as OmniSette's RemoteAnisetteV3 state does
++    /// (SideStore/apple-private-apis, omnisette/src/remote_anisette_v3.rs:
++    /// `AnisetteState::md_lu()` + `encode_hex`): the lowercase hex of SHA-256 over
++    /// the 16 raw keychain-identifier bytes — the same bytes whose UUID string
++    /// form is sent as X-Mme-Device-Id. Pure function of the persistent
++    /// identifier, so it is stable across requests for a given device identity.
++    private static func derivedLocalUserID(for identifier: UUID) -> String {
++        SHA256.hash(data: Data(identifier.uuidBytes))
++            .map { String(format: "%02x", $0) }
++            .joined()
++    }
++
+     private func fetchHeaders(
+         identifier: UUID,
+         storage: ProvisioningStorage,
+@@ -158,6 +171,7 @@ extension AnisetteClient {
+             .with {
+                 $0.oneTimePassword = response.oneTimePassword
+                 $0.machineID       = response.machineID
++                if customHeaders?.localUserID == nil { $0.localUserID = Self.derivedLocalUserID(for: identifier) }
+                 if $0.deviceID == nil { $0.deviceID = identifier.uuidString.uppercased() }
+                 if let storedRinfo = getStoredRoutingInfo(for: identifier) { $0.routingInfo = storedRinfo }
+                 if $0.date == nil && $0.clientTime == nil { $0.date = Date() }
+@@ -335,6 +349,7 @@ extension AnisetteClient {
+         let headers = AnisetteRequestHeaders.defaultHeaders
+             .applyingOverrides(customHeaders)
+             .with {
++                if customHeaders?.localUserID == nil { $0.localUserID = Self.derivedLocalUserID(for: identifier) }
+                 if $0.deviceID == nil { $0.deviceID = identifier.uuidString.uppercased() }
+                 if let routingInfo { $0.routingInfo = routingInfo }
+                 if $0.date == nil && $0.clientTime == nil { $0.date = Date() }
